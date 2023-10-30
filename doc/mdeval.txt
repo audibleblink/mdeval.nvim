@@ -51,6 +51,14 @@ You can configure *mdeval.nvim* by running `mdeval.setup` function.
 Here is a complete list of the available configuration options.
 
 ------------------------------------------------------------------------------
+                                                   *variable_option_identifier*
+variable_option_identifier~
+
+The string that would identify an option to be replaced by an argument
+in the code block
+
+    Default value: `'$$'`
+------------------------------------------------------------------------------
                                                          *require_confirmation*
 require_confirmation~
 

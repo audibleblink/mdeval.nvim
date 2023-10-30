@@ -14,6 +14,13 @@ local function code_block_end()
   return defaults.lang_conf[vim.bo.filetype][2]
 end
 
+-- Concatenates tbl2 into tbl1
+local function tbl_concat(tbl1, tbl2)
+  for _, v in ipairs(tbl2) do
+    table.insert(tbl1, v)
+  end
+end
+
 -- A wrapper to execute commands throught WSL on Windows.
 local function get_command(cmd)
   if vim.loop.os_uname().version:match("Windows") then
@@ -136,20 +143,30 @@ end
 local function find_lang_options(lang_code)
   local lang_name = nil
   local lang_options = nil
+  local lang_code_program = table.remove(lang_code, 1)
   for name, opts in pairs(M.opts.eval_options) do
     if type(opts.language_code) == "table" then
       for _, code in pairs(opts.language_code) do
-        if code == lang_code then
+        if code == lang_code_program then
           lang_name = name
           lang_options = opts
           break
         end
       end
-    elseif opts.language_code == lang_code then
+    elseif opts.language_code == lang_code_program then
       lang_name = name
       lang_options = opts
       break
     end
+  end
+  if #lang_code > 0 then
+    lang_options = vim.deepcopy(lang_options) -- Deep clone to not change the defaults
+    for index, option in pairs(lang_options.command) do
+      if option == defaults.variable_option_identifier then
+        lang_options.command[index] = table.remove(lang_code, 1)
+      end
+    end
+    tbl_concat(lang_options.command, lang_code)
   end
   return lang_name, lang_options
 end
@@ -284,12 +301,16 @@ local function write_output(linenr, out)
   end
 end
 
--- Parses start line to get code of the language.
--- For example: `#+BEGIN_SRC cpp` returns `cpp`.
+-- Parses start line to get code and options of the language.
+-- For example: `#+BEGIN_SRC cpp` returns `{ 'cpp' }`.
+-- `{{{node --import=lib.js` returns `{'node', '--import-lib.js'}`
 local function get_lang(start_line)
   local start_pos = string.find(start_line, code_block_start())
   local len = string.len(code_block_start())
-  return string.sub(start_line, start_pos + len):gsub("%s+", "")
+  -- Extract and trim the code command
+  local lang_string =
+    string.sub(start_line, start_pos + len):gsub("^%s+", ""):gsub("%s+$", "")
+  return vim.split(lang_string, " ")
 end
 
 -- Returns indentation length for the string `s`.
@@ -375,7 +396,7 @@ function M:eval_code_block()
 
   local start_line = fn.getline(linenr_from)
   local lang_code = get_lang(start_line)
-  if lang_code == "" then
+  if #lang_code == 0 then
     print("Language is not defined.")
     return
   end
@@ -388,7 +409,7 @@ function M:eval_code_block()
 
   local lang_name, lang_options = find_lang_options(lang_code)
   if lang_name == nil or lang_options == nil then
-    print(string.format("Unsupported language: %s", lang_code))
+    print(string.format("Unsupported language: %s", lang_code[1]))
     return
   end
 

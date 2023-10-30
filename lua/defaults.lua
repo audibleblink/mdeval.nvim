@@ -14,6 +14,7 @@ M.allowed_file_types = {}
 M.exec_timeout = -1
 M.tmp_build_dir = "/tmp/mdeval/"
 M.results_label = "*Results:*"
+M.variable_option_identifier = "$$"
 M.eval_options = {
   bash = {
     command = { "bash" },
