@@ -112,6 +112,28 @@ local function run_compiler(command, extension, temp_filename, code, timeout)
   return result, true
 end
 
+local function run_argument(command, code, timeout)
+  assert(command ~= nil)
+
+  local cmd = string.format(
+    '%s "%s"',
+    table.concat(command, " "),
+    vim.fn.escape(code, '"')
+  )
+  local handle
+  if timeout ~= -1 then
+    handle = io.popen(get_timeout_command(cmd, timeout))
+  else
+    handle = io.popen(get_command(string.format("%s 2>&1", cmd)))
+  end
+  local result = {}
+  for line in handle:lines() do
+    result[#result + 1] = line
+  end
+
+  return result, true
+end
+
 local function run_interpreter(command, extension, temp_filename, code, timeout)
   assert(command ~= nil)
   local filepath = string.format("%s/%s", M.opts.tmp_build_dir, temp_filename)
@@ -171,19 +193,28 @@ local function find_lang_options(lang_code)
   return lang_name, lang_options
 end
 
-local function eval_code(lang_name, lang_options, temp_filename, code, timeout)
-  create_tmp_build_dir()
-
+local function eval_code(
+  lang_name,
+  lang_options,
+  temp_filename_generator,
+  code,
+  timeout
+)
   -- Prepend generated code with the default_header.
   if lang_options.default_header then
     code = lang_options.default_header .. "\n" .. code
   end
 
+  if lang_options.exec_type == "argument" then
+    return run_argument(lang_options.command, code, timeout)
+  end
+
+  create_tmp_build_dir()
   if lang_options.exec_type == "compiled" then
     return run_compiler(
       lang_options.command,
       lang_options.extension,
-      temp_filename,
+      temp_filename_generator(),
       code,
       timeout
     )
@@ -191,7 +222,7 @@ local function eval_code(lang_name, lang_options, temp_filename, code, timeout)
     return run_interpreter(
       lang_options.command,
       lang_options.extension,
-      temp_filename,
+      temp_filename_generator(),
       code,
       timeout
     )
@@ -433,10 +464,17 @@ function M:eval_code_block()
     end
   end
 
-  local temp_filename =
+  local temp_filename_generator = function()
     generate_temp_filename(api.nvim_buf_get_name(0), linenr_from, linenr_until)
-  local eval_output, rc =
-    eval_code(lang_name, lang_options, temp_filename, code, M.opts.exec_timeout)
+  end
+
+  local eval_output, rc = eval_code(
+    lang_name,
+    lang_options,
+    temp_filename_generator,
+    code,
+    M.opts.exec_timeout
+  )
   remove_previous_output(linenr_until + 1)
   write_output(linenr_until, eval_output)
 end
