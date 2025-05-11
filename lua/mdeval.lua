@@ -181,7 +181,7 @@ local function find_lang_options(lang_code)
       break
     end
   end
-  if #lang_code > 0 then
+  if #lang_code > 0 and lang_code_program ~= nil then
     lang_options = vim.deepcopy(lang_options) -- Deep clone to not change the defaults
     for index, option in pairs(lang_options.command) do
       if option == defaults.variable_option_identifier then
@@ -349,7 +349,7 @@ local function get_indent_lenght(s)
   local tab_length = 4
   local indent = 0
   for i = 1, #s do
-    c = s:sub(i, i)
+    local c = s:sub(i, i)
     if c == " " then
       indent = indent + 1
     else
