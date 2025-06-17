@@ -200,6 +200,11 @@ local function eval_code(
   code,
   timeout
 )
+  -- Append generated code with the default_footer.
+  if lang_options.default_footer then
+    code = code .. "\n" .. lang_options.default_footer
+  end
+
   -- Prepend generated code with the default_header.
   if lang_options.default_header then
     code = lang_options.default_header .. "\n" .. code
@@ -245,7 +250,7 @@ local function eval_code(
 end
 
 local function generate_temp_filename(buffer_name, start_pos, end_pos)
-  local basename = buffer_name:match("^.+/(.+)$") or "temp"
+  local basename = buffer_name:match("^.+/(.+)$") or "__temp__"
   -- Allow only alphanumeric values in the names.
   -- Some compilers require this (for example, rustc).
   basename = basename:gsub("%W", "")
@@ -465,11 +470,7 @@ function M:eval_code_block()
   end
 
   local temp_filename_generator = function()
-    generate_temp_filename(
-      api.nvim_buf_get_name(0),
-      linenr_from,
-      linenr_until
-    )
+    generate_temp_filename(api.nvim_buf_get_name(0), linenr_from, linenr_until)
   end
 
   local eval_output, rc = eval_code(

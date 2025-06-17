@@ -125,6 +125,9 @@ Supported table keys:
 - `default_header`
   The lines of code that will be added at the beginning of each code block
   before execution. For example, you can use this to add some imports.
+- `default_footer`
+  The lines of code that will be added at the end of each code block
+  before execution.
 
 Example configuration:
 >
