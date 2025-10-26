@@ -1,4 +1,4 @@
-*mdeval.txt*
+*mdeval.txt*  Evaluate code blocks in markdown and similar formats
 
 CONTENTS                                     *mdeval-contents*
 
@@ -6,151 +6,204 @@ Introduction                                 |mdeval-introduction|
 Installation                                 |mdeval-installation|
 Usage                                        |mdeval-usage|
 Configuration                                |mdeval-configuration|
+Commands                                     |mdeval-commands|
+Supported Filetypes                          |mdeval-filetypes|
+Supported Languages                          |mdeval-languages|
 
 Note: Type |gO| to show the outline of contents.
 
 ==============================================================================
 INTRODUCTION                                              *mdeval-introduction*
 
-This plugin is inspired by org-mode's evaluating code blocks feature and tries
-to implement its basic functionality inside Neovim.
+mdeval.nvim is a Neovim plugin inspired by org-mode's evaluating code blocks
+feature. It allows you to execute code blocks directly within markdown,
+vimwiki, org, and norg files, and automatically inserts the results below
+the code block.
+
+This is a complete rewrite focused on simplicity and flexibility.
 
 ==============================================================================
 INSTALLATION                                              *mdeval-installation*
 
-------------------------------------------------------------------------------
-
-Via Plugin Manager~
-
-    Take [vim-plug](https://github.com/junegunn/vim-plug) for example:
->
-        Plug 'sainnhe/mdeval'
+Using Lazy.nvim:
+>lua
+    { 'audibleblink/mdeval.nvim' }
 <
-    You should also enable syntax highlighting inside code blocks in markdown
-    using the built-in functionality. Please define a list of markdown fenced
-    languages in your configuration file:
->
-        let g:markdown_fenced_languages = ['python', 'cpp']
+
+Using vim-plug:
+>vim
+    Plug 'audibleblink/mdeval.nvim'
 <
+
+Using built-in package manager:
+>lua
+    vim.pack.add("audibleblink/mdeval.nvim")
+<
+
+The plugin will auto-setup with default settings. For custom configuration,
+call the setup function (see |mdeval-configuration|).
 
 ==============================================================================
 USAGE                                                            *mdeval-usage*
 
-------------------------------------------------------------------------------
+Place your cursor inside a fenced code block with a language identifier and
+execute the |:MdEval| command. The plugin will execute the code and insert
+results right after the code block.
 
-To use this plugin, you should move cursor inside a fenced code block with
-language identifier and execute the `:MdEval` command. mdeval.nvim will
-capture the results of the code block execution and inserts them in the
-markdown file, right after the code block.
+Example:
+
+Before:
+>markdown
+    ```python
+    print("Hello, World!")
+    print(2 + 2)
+    ```
+<
+
+After running `:MdEval`:
+>markdown
+    ```python
+    print("Hello, World!")
+    print(2 + 2)
+    ```
+
+    **Results:**
+    ```
+    Hello, World!
+    4
+    ```
+<
+
+To remove results, use |:MdEvalClean| while cursor is in the code block.
+
+==============================================================================
+COMMANDS                                                      *mdeval-commands*
+
+                                                                      *:MdEval*
+:MdEval                 Execute the code block under the cursor and insert
+                        results below it. If results already exist, they will
+                        be replaced.
+
+                                                                 *:MdEvalClean*
+:MdEvalClean            Remove the results from the code block under cursor.
 
 ==============================================================================
 CONFIGURATION                                            *mdeval-configuration*
 
-You can configure *mdeval.nvim* by running `mdeval.setup` function.
-
-Here is a complete list of the available configuration options.
-
-------------------------------------------------------------------------------
-                                                   *variable_option_identifier*
-variable_option_identifier~
-
-The string that would identify an option to be replaced by an argument
-in the code block
-
-    Default value: `'$$'`
-------------------------------------------------------------------------------
-                                                         *require_confirmation*
-require_confirmation~
-
-If set to `true`, the plugin will ask for confirmation each time before
-evaluating the code block.
-
-    Available values: `false`, `true`
-    Default value: `true`
-
-------------------------------------------------------------------------------
-                                                           *allowed_file_types*
-allowed_file_types~
-
-A list of language codes, for which this plugin will not ask for the
-confirmation before evaluation.
-
-    Default value: `{}`
-
-E.g.
->
-    allowed_file_types={'python', 'cpp'}
+Configure mdeval.nvim by calling the setup function:
+>lua
+    require('mdeval').setup({
+      timeout = -1,
+      results_label = "**Results:**",
+      tmp_dir = "/tmp/mdeval",
+      languages = {
+        python = "python3",
+        bash = "bash",
+      },
+    })
 <
-------------------------------------------------------------------------------
-                                                                *tmp_build_dir*
-tmp_build_dir~
 
-The path to the directory that will be used to store temporary source files
-and compiled artifacts.
+Configuration Options~
 
-    Default value: `/tmp/mdeval/`
+                                                             *mdeval.timeout*
+timeout                 Timeout for code execution in seconds. Set to -1 to
+                        disable timeout.
 
-------------------------------------------------------------------------------
-                                                                 *exec_timeout*
-exec_timeout~
+                        Type: `number`
+                        Default: `-1`
 
-Timeout for execution of the code block in seconds. If set -1, the timeout
-will be disabled.
+                                                        *mdeval.results_label*
+results_label           The string inserted before code evaluation output.
 
-    Default value: `*-1*`
+                        Type: `string`
+                        Default: `"**Results:**"`
 
-------------------------------------------------------------------------------
-                                                                *results_label*
-results_label~
+                                                             *mdeval.tmp_dir*
+tmp_dir                 Directory used to store temporary source files and
+                        compiled artifacts.
 
-The string inserted before the code evaluation output.
+                        Type: `string`
+                        Default: `"/tmp/mdeval"`
 
-    Default value: `*Results:*`
+                                                          *mdeval.languages*
+languages               Table mapping language codes to execution commands.
 
-------------------------------------------------------------------------------
-                                                                 *eval_options*
-eval_options~
+                        Commands can use placeholders:
+                        - `{file}` - Path to temporary source file
+                        - `{tmp}` - Temp directory path
 
-A table with evaluation options for the code blocks for different languages.
-Supported table keys:
-- `command`
-  A command to run the interpreter or compiler.
-- `language_code`
-  A code of the language in the markdown code block.
-- `exec_type`
-  Supported values: "compiled" and "interpreted".
-- `extension`
-  File extension for the temporary files generated by the plugin. Some
-  languages require the correct extension to compile the file.
-- `default_header`
-  The lines of code that will be added at the beginning of each code block
-  before execution. For example, you can use this to add some imports.
-- `default_footer`
-  The lines of code that will be added at the end of each code block
-  before execution.
+                        If a command contains `{file}`, code is written to a
+                        file first. Otherwise, code is passed via stdin.
 
-Example configuration:
->
-  eval_options = {
-    -- Set custom configuration for C++
-    cpp = {
-      command = {"clang++", "-std=c++20", "-O0"},
-      default_header = [[
-    #include <iostream>
-    #include <vector>
-    using namespace std;
-      ]]
-    },
-    -- Add new configuration for Racket
-    racket = {
-      command = {"racket"},
-      language_code = "racket",
-      exec_type = "interpreted",
-      extension = "rkt",
-    },
-  }
+                        Type: `table`
+                        See |mdeval-languages| for defaults.
+
+Example Configuration:
+>lua
+    require('mdeval').setup({
+      timeout = 10,
+      results_label = "Output:",
+      languages = {
+        -- Interpreters (code via stdin)
+        python = "python3",
+        ruby = "ruby -w",
+        
+        -- Compilers (use placeholders)
+        cpp = "g++ -std=c++20 {file} -o {tmp}/a.out && {tmp}/a.out",
+        c = "gcc -Wall {file} -o {tmp}/a.out && {tmp}/a.out",
+        
+        -- Custom languages
+        racket = "racket",
+        go = "go run {file}",
+      },
+    })
 <
-------------------------------------------------------------------------------
+
+                                                         *mdeval.delimiters*
+delimiters              Code block delimiters for different filetypes.
+                        See |mdeval-filetypes| for defaults.
+
+                        Type: `table`
+
+==============================================================================
+SUPPORTED FILETYPES                                        *mdeval-filetypes*
+
+The plugin recognizes code blocks in these filetypes:
+
+    markdown             Fenced blocks: ``` ... ```
+    markdown.pandoc      Fenced blocks: ``` ... ```
+    vimwiki              Code blocks: {{{ ... }}}
+    org                  Source blocks: #+BEGIN_SRC ... #+END_SRC
+    norg                 Code blocks: @code ... @end
+
+Custom delimiters can be added via the `delimiters` config option:
+>lua
+    require('mdeval').setup({
+      delimiters = {
+        myformat = { "<<<", ">>>" },
+      },
+    })
+<
+
+==============================================================================
+SUPPORTED LANGUAGES                                        *mdeval-languages*
+
+Default language configurations:
+
+Interpreters (code via stdin):
+    bash, sh             bash
+    python, py           python3
+    lua                  lua
+    ruby                 ruby
+    js                   node
+    haskell              runghc
+
+Compilers (file-based execution):
+    c                    gcc {file} -o {tmp}/a.out && {tmp}/a.out
+    cpp                  g++ {file} -o {tmp}/a.out && {tmp}/a.out
+    rust                 rustc {file} -o {tmp}/a.out && {tmp}/a.out
+
+You can override or add languages in your setup configuration.
 
 ==============================================================================
 vim:tw=78:nosta:noet:ts=8:sts=0:ft=help:et:sw=4:fen:fdm=marker:fmr={{{,}}}:
