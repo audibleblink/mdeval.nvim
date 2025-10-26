@@ -21,10 +21,10 @@ local function tbl_concat(tbl1, tbl2)
   end
 end
 
--- A wrapper to execute commands throught WSL on Windows.
+-- A wrapper to execute commands through WSL on Windows.
 local function get_command(cmd)
   if vim.loop.os_uname().version:match("Windows") then
-    return string.format("wsl %s", prefix, cmd)
+    return string.format("wsl %s", cmd)
   end
   return cmd
 end
@@ -33,7 +33,9 @@ local function create_tmp_build_dir()
   local handle = io.popen(
     get_command(string.format("mkdir -p %s 2>&1", M.opts.tmp_build_dir))
   )
-  handle:close()
+  if handle then
+    handle:close()
+  end
 end
 
 -- Exclude long temporary directory name from the output.
@@ -49,6 +51,7 @@ end
 
 -- Wraps command inside the "timeout" call.
 local function get_timeout_command(cmd, timeout)
+  local timeout_cmd
   if vim.loop.os_uname().sysname == "Darwin" then
     timeout_cmd = "gtimeout"
   else
@@ -66,13 +69,18 @@ local function run_compiler(command, extension, temp_filename, code, timeout)
   local a_out_filepath = string.format("%s.out", filepath)
 
   local f = io.open(src_filepath, "w")
+  if not f then
+    return { "Error: Could not create temporary file" }, false
+  end
   f:write(code)
   f:close()
 
   -- Remove temp files left over from the previous compilation.
-  local handle =
+  local cleanup_handle =
     io.popen(get_command(string.format("rm -f %s 2>&1", a_out_filepath)))
-  handle:close()
+  if cleanup_handle then
+    cleanup_handle:close()
+  end
 
   local handle = io.popen(
     get_command(
@@ -84,6 +92,9 @@ local function run_compiler(command, extension, temp_filename, code, timeout)
       )
     )
   )
+  if not handle then
+    return { "Error: Could not execute compiler" }, false
+  end
   local result = {}
   local lastline
   for line in handle:lines() do
@@ -97,17 +108,23 @@ local function run_compiler(command, extension, temp_filename, code, timeout)
     result = sanitize_output(filepath, result)
     return result, false
   end
+  handle:close()
 
+  local exec_handle
   if timeout ~= -1 then
-    handle = io.popen(get_timeout_command(a_out_filepath, timeout))
+    exec_handle = io.popen(get_timeout_command(a_out_filepath, timeout))
   else
-    handle = io.popen(get_command(string.format("%s 2>&1", a_out_filepath)))
+    exec_handle =
+      io.popen(get_command(string.format("%s 2>&1", a_out_filepath)))
+  end
+  if not exec_handle then
+    return { "Error: Could not execute compiled program" }, false
   end
   result = {}
-  for line in handle:lines() do
+  for line in exec_handle:lines() do
     result[#result + 1] = line
   end
-  handle:close()
+  exec_handle:close()
 
   return result, true
 end
@@ -126,10 +143,14 @@ local function run_argument(command, code, timeout)
   else
     handle = io.popen(get_command(string.format("%s 2>&1", cmd)))
   end
+  if not handle then
+    return { "Error: Could not execute command" }, false
+  end
   local result = {}
   for line in handle:lines() do
     result[#result + 1] = line
   end
+  handle:close()
 
   return result, true
 end
@@ -140,6 +161,9 @@ local function run_interpreter(command, extension, temp_filename, code, timeout)
   local src_filepath = string.format("%s.%s", filepath, extension)
 
   local f = io.open(src_filepath, "w")
+  if not f then
+    return { "Error: Could not create temporary file" }, false
+  end
   f:write(code)
   f:close()
 
@@ -150,12 +174,14 @@ local function run_interpreter(command, extension, temp_filename, code, timeout)
   else
     handle = io.popen(get_command(string.format("%s 2>&1", cmd)))
   end
+  if not handle then
+    return { "Error: Could not execute interpreter" }, false
+  end
   local result = {}
-  local lastline
   for line in handle:lines() do
     result[#result + 1] = line
-    lastline = line
   end
+  handle:close()
 
   return result, true
 end
@@ -167,28 +193,30 @@ local function find_lang_options(lang_code)
   local lang_options = nil
   local lang_code_program = table.remove(lang_code, 1)
   for name, opts in pairs(M.opts.eval_options) do
-    if type(opts.language_code) == "table" then
-      for _, code in pairs(opts.language_code) do
+    if opts and type(opts.language_code) == "table" then
+      for _, code in ipairs(opts.language_code) do
         if code == lang_code_program then
           lang_name = name
           lang_options = opts
           break
         end
       end
-    elseif opts.language_code == lang_code_program then
+    elseif opts and opts.language_code == lang_code_program then
       lang_name = name
       lang_options = opts
       break
     end
   end
-  if #lang_code > 0 and lang_code_program ~= nil then
+  if #lang_code > 0 and lang_code_program ~= nil and lang_options then
     lang_options = vim.deepcopy(lang_options) -- Deep clone to not change the defaults
-    for index, option in pairs(lang_options.command) do
-      if option == defaults.variable_option_identifier then
-        lang_options.command[index] = table.remove(lang_code, 1)
+    if lang_options.command then
+      for index, option in pairs(lang_options.command) do
+        if option == defaults.variable_option_identifier then
+          lang_options.command[index] = table.remove(lang_code, 1)
+        end
       end
+      tbl_concat(lang_options.command, lang_code)
     end
-    tbl_concat(lang_options.command, lang_code)
   end
   return lang_name, lang_options
 end
@@ -233,7 +261,7 @@ local function eval_code(
     )
   end
 
-  if lang.exec_type == nil then
+  if lang_options.exec_type == nil then
     error(string.format("Execution type for %s unset.", lang_name))
     error("Please set one of the: compiled and interpreted one.")
   else
@@ -241,12 +269,10 @@ local function eval_code(
       string.format(
         "Unknown execution type for %s: %s",
         lang_name,
-        lang.exec_type
+        lang_options.exec_type
       )
     )
   end
-
-  return nil, false
 end
 
 local function generate_temp_filename(buffer_name, start_pos, end_pos)
@@ -277,10 +303,10 @@ local function remove_previous_output(linenr)
   -- Remove multiline code blocks following the results header.
   local cur_line = fn.getline(linenr)
   if cur_line:find(code_block_start()) then
-    end_linenr = linenr
+    local end_linenr = linenr
     while true do
       end_linenr = end_linenr + 1
-      local cur_line = fn.getline(end_linenr)
+      cur_line = fn.getline(end_linenr)
       if cur_line == nil then
         break
       end
@@ -350,7 +376,7 @@ local function get_lang(start_line)
 end
 
 -- Returns indentation length for the string `s`.
-local function get_indent_lenght(s)
+local function get_indent_length(s)
   local tab_length = 4
   local indent = 0
   for i = 1, #s do
@@ -376,44 +402,44 @@ end
 -- the current buffer.
 local function parse_code(start_l, end_l)
   local code = api.nvim_buf_get_lines(0, start_l, end_l, false)
-  if code == nil then
+  if code == nil or #code == 0 then
     return ""
   end
-  code = table.concat(code, "\n")
+  local code_str = table.concat(code, "\n")
   -- Remove extra indent before the source code.
   -- This is important for space sensitive languages like Python and Haskell.
   local first_line_indent = 0
   local has_indent = false
   local lines = {}
-  local rest_code = code
-  while true do
+  ---@type string?
+  local rest_code = code_str
+  while rest_code do
     -- Get the current line
-    if rest_code == nil then
-      break
-    end
-    is, ie = string.find(rest_code, "\n")
+    local is, ie = string.find(rest_code, "\n")
+    local s
     if is == nil then
       s = rest_code
     else
-      s, _ = rest_code:sub(1, ie - 1)
+      s = rest_code:sub(1, ie - 1)
     end
     if #s + 2 < #rest_code then
-      rest_code, _ = rest_code:sub(#s + 2, #rest_code)
+      rest_code = rest_code:sub(#s + 2, #rest_code)
     else
       rest_code = nil
     end
 
     if not has_indent then
       -- Find the indent at the first line
-      first_line_indent = get_indent_lenght(s)
+      first_line_indent = get_indent_length(s)
       if first_line_indent == 0 then
-        return code -- no extra indent found
+        return code_str -- no extra indent found
       end
+      has_indent = true
       table.insert(lines, s:sub(first_line_indent, #s))
     else
-      line_indent = get_indent_lenght(s)
+      local line_indent = get_indent_length(s)
       if line_indent ~= first_line_indent then
-        return code -- doesn't match the indent, so it is not an indentation
+        return code_str -- doesn't match the indent, so it is not an indentation
       end
       table.insert(lines, s:sub(line_indent, #s))
     end
@@ -422,7 +448,7 @@ local function parse_code(start_l, end_l)
   return table.concat(lines, "\n")
 end
 
-function M:eval_code_block()
+function M.eval_code_block()
   local linenr_from = fn.search(code_block_start() .. ".\\+$", "bnW")
   local linenr_until = fn.search(code_block_end() .. ".*$", "nW")
   if linenr_from == 0 or linenr_until == 0 then
@@ -470,10 +496,14 @@ function M:eval_code_block()
   end
 
   local temp_filename_generator = function()
-    generate_temp_filename(api.nvim_buf_get_name(0), linenr_from, linenr_until)
+    return generate_temp_filename(
+      api.nvim_buf_get_name(0),
+      linenr_from,
+      linenr_until
+    )
   end
 
-  local eval_output, rc = eval_code(
+  local eval_output = eval_code(
     lang_name,
     lang_options,
     temp_filename_generator,
@@ -484,7 +514,7 @@ function M:eval_code_block()
   write_output(linenr_until, eval_output)
 end
 
-function M:eval_clean_results()
+function M.eval_clean_results()
   local linenr_from = fn.search(code_block_start() .. ".\\+$", "bnW")
   local linenr_until = fn.search(code_block_end() .. ".*$", "nW")
   if linenr_from == 0 or linenr_until == 0 then
