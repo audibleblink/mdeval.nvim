@@ -1,94 +1,146 @@
 # mdeval.nvim
 
-![](https://github.com/jubnzv/mdeval.nvim/workflows/check/badge.svg)
 
-This plugin allows you evaluate code blocks inside markdown, [vimwiki](https://github.com/vimwiki/vimwiki), [orgmode.nvim](https://github.com/kristijanhusak/orgmode.nvim) and [norg](https://github.com/vhyrro/neorg) documents.
+A simple Neovim plugin to evaluate code blocks inside markdown, [vimwiki](https://github.com/vimwiki/vimwiki), [orgmode.nvim](https://github.com/kristijanhusak/orgmode.nvim) and [norg](https://github.com/vhyrro/neorg) documents.
 
-It attempts to implement the basic functionality of org-mode's [evaluating code blocks](https://orgmode.org/manual/Evaluating-Code-Blocks.html#Evaluating-Code-Blocks) feature inside Neovim.
-
-## Demo
-
-![](./demo.gif)
-
-## Requirements
-This plugin requires Neovim version 0.5+.
-
-It works on Linux, MacOS and Windows (through WSL).
-
-MacOS users should make sure that they have `coreutils` package installed:
-
-```bash
-brew install coreutils
-```
-
-Windows users should have [installed WSL](https://docs.microsoft.com/en-us/windows/wsl/install-win10) with compilers/interpreters they want use.
+Inspired by org-mode's [evaluating code blocks](https://orgmode.org/manual/Evaluating-Code-Blocks.html#Evaluating-Code-Blocks) feature.
 
 ## Installation
 
-Install it with your plugin manager.
-
-Then add the following line in your `init.lua`:
+Install with your plugin manager:
 
 ```lua
-require 'mdeval'.setup()
-```
+-- Lazy.nvim
+{ 'audibleblink/mdeval.nvim' }
 
-You should also enable syntax highlighting inside code blocks for your languages using the built-in functionality:
-
-```lua
-vim.g.markdown_fenced_languages = {'python', 'cpp'}
+-- Packer
+vim.pack.add("audibleblink/mdeval.nvim")
+require('mdeval').setup()
 ```
 
 ## Usage
 
-To use this plugin, you should move cursor inside a fenced code block with language identifier and execute the `:MdEval` command.
-*mdeval.nvim* will capture the results of the code block execution and inserts them in the markdown file, right after the code block.
+Move your cursor inside a fenced code block and run `:MdEval`.
+
+The plugin will execute the code and insert the results right after the code block.
+
+### Example
+
+Before:
+````markdown
+```python
+print("Hello, World!")
+print(2 + 2)
+```
+````
+
+After running `:MdEval`:
+````markdown
+```python
+print("Hello, World!")
+print(2 + 2)
+```
+
+**Results:**
+```
+Hello, World!
+4
+```
+````
+
+### Cleaning Results
+
+Use `:MdEvalClean` to remove the results from the current code block.
 
 ## Configuration
 
-You can configure *mdeval.nvim* by running the `mdeval.setup` function.
-
-Here is an example:
+### Basic Setup
 
 ```lua
-require 'mdeval'.setup({
-  -- Don't ask before executing code blocks
-  require_confirmation=false,
-  -- Change code blocks evaluation options.
-  eval_options = {
-    -- Set custom configuration for C++
-    cpp = {
-      command = {"clang++", "-std=c++20", "-O0"},
-      default_header = [[
-    #include <iostream>
-    #include <vector>
-    using namespace std;
-      ]]
-    },
-    -- Add new configuration for Racket
-    racket = {
-      command = {"racket"},        -- Command to run interpreter
-      language_code = "racket",    -- Markdown language code
-      exec_type = "interpreted",   -- compiled or interpreted
-      extension = "rkt",           -- File extension for temporary files
-    },
+require('mdeval').setup({
+  -- Timeout in seconds (-1 for no timeout)
+  timeout = -1,
+  
+  -- Label for results
+  results_label = "**Results:**",
+  
+  -- Temp directory for compiled languages
+  tmp_dir = "/tmp/mdeval",
+  
+  -- Language configurations
+  languages = {
+    python = "python3",
+    bash = "bash",
+    lua = "lua",
   },
 })
 ```
 
-By default, the plugin will ask your confirmation before evaluating code. This makes sense, because code evaluation is potentially harm operation.
-You can disable this feature setting `require_confirmation` option to `false`, or allow to execute code blocks without confirmation only for some languages, using `allowed_file_types` option, for example: `allowed_file_types={'rust', 'haskell'}`.
+### Language Configuration
 
-Probably, it will be a good idea to define keybindings to call `:MdEval`. This plugin doesn't add default keybindings, but you can do this in your configuration file, for example:
+Languages are configured with simple command strings:
 
 ```lua
-vim.api.nvim_set_keymap('n', '<leader>c',
-                        "<cmd>lua require 'mdeval'.eval_code_block()<CR>",
-                        {silent = true, noremap = true})
+languages = {
+  -- Interpreters (code via stdin)
+  python = "python3",
+  ruby = "ruby",
+  
+  -- Compilers (use {file} and {tmp} placeholders)
+  c = "gcc {file} -o {tmp}/a.out && {tmp}/a.out",
+  cpp = "g++ {file} -o {tmp}/a.out && {tmp}/a.out",
+  rust = "rustc {file} -o {tmp}/a.out && {tmp}/a.out",
+}
 ```
 
-See the complete list of options in the [documentation](./doc/mdeval.txt).
+**Placeholders:**
+- `{file}` - Path to temporary source file
+- `{tmp}` - Temp directory path
 
-## See also
+If a command contains `{file}`, the code is written to a file. Otherwise, it's passed via stdin.
 
-* [Sniprun](https://github.com/michaelb/sniprun) – A similar plugin written in Rust with much more features.
+
+### Keybindings
+
+The plugin doesn't set default keybindings. Add your own:
+
+```lua
+vim.keymap.set('n', '<leader>e', function() 
+    require("mdeval").eval() 
+end, { silent = true })
+vim.keymap.set('n', '<leader>e', function() 
+    require("mdeval").clean() 
+end, { silent = true })
+```
+
+## Supported Languages (Default)
+
+Out of the box, these languages are configured:
+
+- **Interpreters:** bash, sh, python, py, lua, ruby, js, haskell
+- **Compilers:** c, cpp, rust
+
+Add or override any language in your setup.
+
+## Supported Filetypes
+
+- `markdown` - ` ``` ` delimiters
+- `markdown.pandoc` - ` ``` ` delimiters  
+- `vimwiki` - `{{{` / `}}}` delimiters
+- `org` - `#+BEGIN_SRC` / `#+END_SRC` delimiters
+- `norg` - `@code` / `@end` delimiters
+
+
+## Comparison with v1
+
+This is a **complete rewrite** focused on simplicity:
+
+- **59% less code** (659 → 267 lines)
+- **65% fewer functions** (23 → 8)
+- **Simpler configuration** - just command strings
+- **More flexible** - full control over execution
+
+
+## License
+
+MIT
